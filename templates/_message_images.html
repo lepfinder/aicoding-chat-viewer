@@ -1,0 +1,14 @@
+<div class="msg-images">
+  {% for img in images %}
+  <a class="msg-image-link" href="{{ img.src }}" target="_blank" rel="noopener noreferrer">
+    <img
+      class="msg-image"
+      src="{{ img.src }}"
+      alt="附图 {{ loop.index }}"
+      loading="lazy"
+      {% if img.width %}width="{{ img.width }}"{% endif %}
+      {% if img.height %}height="{{ img.height }}"{% endif %}
+    >
+  </a>
+  {% endfor %}
+</div>

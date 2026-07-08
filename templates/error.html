@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}错误{% endblock %}
+{% block body %}
+<div class="empty" style="padding:3rem;">{{ message }}<br><br><a href="{{ url_for('index') }}">返回首页</a></div>
+{% endblock %}

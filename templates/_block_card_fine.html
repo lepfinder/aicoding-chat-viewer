@@ -1,0 +1,31 @@
+<article
+  class="ws-block-card ws-block-card-fine ws-block-card-clickable fine-type-{{ block.type or 'feature' }}"
+  data-block-id="{{ block.id }}"
+  data-batch-index="{{ block.batch_index if block.batch_index is not none else '' }}"
+  title="点击查看详情与本批消息"
+  tabindex="0"
+  role="button"
+>
+  <div class="ws-fine-card-top">
+    {% if block.batch_index is not none %}
+    <span class="ws-fine-batch">批{{ block.batch_index + 1 }}</span>
+    {% endif %}
+    <span class="ws-badge type-{{ block.type }}">{{ block.type|block_type_label }}</span>
+  </div>
+  <h5 class="ws-block-title">{{ block.title }}</h5>
+  <p class="ws-block-summary">{{ block.summary }}</p>
+  {% if block.keywords %}
+  <div class="ws-block-keywords">
+    {% for kw in block.keywords[:3] %}
+    <span class="ws-kw">{{ kw }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if block.start_date or block.end_date %}
+  <p class="ws-block-dates">
+    {% if block.start_date %}{{ block.start_date }}{% else %}—{% endif %}
+    ~
+    {% if block.end_date %}{{ block.end_date }}{% else %}—{% endif %}
+  </p>
+  {% endif %}
+</article>

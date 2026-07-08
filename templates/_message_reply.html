@@ -1,0 +1,23 @@
+<details class="msg msg-collapsible role-{{ m.role }}">
+  <summary>
+    {% include "_collapse_icon.html" %}
+    <strong>{{ m.role|role_label }}</strong>
+    {% if m.tool_name %}<span>{{ m.tool_name }}</span>{% endif %}
+    <span>step {{ m.step_index }}</span>
+    <span class="msg-time">{{ m.created_at|fmt_msg_time }}</span>
+    {% if m.is_truncated %}<span class="badge warn">截断</span>{% endif %}
+    <span class="expand-hint">点击展开</span>
+    {% if m.content %}
+    <span class="msg-preview">{{ m.content.replace('\n', ' ')[:120] }}{% if m.content|length > 120 %}…{% endif %}</span>
+    {% endif %}
+  </summary>
+  <div class="msg-body">
+    {% if m.content %}<pre>{{ m.content }}</pre>{% endif %}
+    {% if m.thinking %}
+    <details class="thinking">
+      <summary>Thinking</summary>
+      <pre>{{ m.thinking }}</pre>
+    </details>
+    {% endif %}
+  </div>
+</details>

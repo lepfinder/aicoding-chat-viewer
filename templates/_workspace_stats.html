@@ -1,0 +1,199 @@
+<div class="workspace-stats">
+  <div class="ws-header">
+    <h3>{{ workspace_stats.workspace_short }}</h3>
+    <p class="ws-path">{{ workspace_stats.workspace_path or '未分类' }}</p>
+  </div>
+
+  <div class="ws-overview">
+    <div class="ws-overview-grid">
+      <div class="ws-cards">
+        <div class="ws-card">
+          <div class="ws-card-value">{{ workspace_stats.conversation_count }}</div>
+          <div class="ws-card-label">会话</div>
+          <div class="ws-card-sub">AG {{ workspace_stats.ag_conversation_count }} · Cursor {{ workspace_stats.cursor_conversation_count }}</div>
+        </div>
+        <div class="ws-card">
+          <div class="ws-card-value">{{ workspace_stats.user_message_count }}</div>
+          <div class="ws-card-label">用户消息</div>
+          <div class="ws-card-sub">全部 {{ workspace_stats.message_count }}</div>
+        </div>
+        <div class="ws-card">
+          <div class="ws-card-value">{{ workspace_stats.active_days }}</div>
+          <div class="ws-card-label">活跃天数</div>
+          <div class="ws-card-sub">{{ workspace_stats.first_active or '—' }} ~ {{ workspace_stats.last_active or '—' }}</div>
+        </div>
+        {% if workspace_stats.peak_day %}
+        <div class="ws-card">
+          <div class="ws-card-value">{{ workspace_stats.peak_day.count }}</div>
+          <div class="ws-card-label">峰值日消息</div>
+          <div class="ws-card-sub">{{ workspace_stats.peak_day.date }}</div>
+        </div>
+        {% endif %}
+      </div>
+
+      <section class="ws-section ws-heatmap-panel">
+        <h4>研发日历</h4>
+        <p class="ws-hint">按用户消息/会话活动统计，颜色越深表示当天越活跃</p>
+        <div class="heatmap-wrap" style="--week-count: {{ workspace_stats.heatmap.weeks|length }}">
+          <div class="heatmap-months">
+            {% for m in workspace_stats.heatmap.month_labels %}
+            <span class="heatmap-month" style="grid-column: {{ m.week_index + 2 }}">{{ m.label }}</span>
+            {% endfor %}
+          </div>
+          <div class="heatmap-body">
+            <div class="heatmap-dow">
+              <span></span><span>一</span><span></span><span>三</span><span></span><span>五</span><span></span>
+            </div>
+            {% for week in workspace_stats.heatmap.weeks %}
+            <div class="heatmap-week" style="grid-column: {{ loop.index + 1 }}">
+              {% for cell in week %}
+              <span
+                class="heatmap-cell level-{{ cell.level }}"
+                title="{{ cell.date }}：{{ cell.count }} 条"
+              ></span>
+              {% endfor %}
+            </div>
+            {% endfor %}
+          </div>
+          <div class="heatmap-legend">
+            <span>少</span>
+            <span class="heatmap-cell level-0"></span>
+            <span class="heatmap-cell level-1"></span>
+            <span class="heatmap-cell level-2"></span>
+            <span class="heatmap-cell level-3"></span>
+            <span class="heatmap-cell level-4"></span>
+            <span>多</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="ws-section ws-report-section" id="ws-analysis-section">
+    <div class="ws-report-head">
+      <div>
+        <h4>研发分析</h4>
+        <p class="ws-hint">三级数据流：细粒度 Blocks → 模块总览 → Markdown 报告</p>
+      </div>
+      {% if not ai_available %}
+      <span class="ws-hint">未配置 API Key（.env）</span>
+      {% endif %}
+    </div>
+
+    <details class="ws-tier ws-tier-fine" id="ws-fine-tier" {% if workspace_report and workspace_report.blocks_fine %}open{% endif %}>
+      <summary class="ws-tier-summary-row">
+        <span class="ws-tier-head">
+          <span class="ws-tier-title">① 细粒度 Blocks</span>
+          <span class="ws-tier-count" id="ws-fine-count">{{ (workspace_report.blocks_fine|length) if workspace_report and workspace_report.blocks_fine else 0 }}</span>
+        </span>
+        {% if ai_available %}
+        <span class="ws-report-actions ws-tier-actions">
+          <button type="button" class="secondary" id="ws-extract-btn">提取 Blocks</button>
+          <button type="button" class="secondary" id="ws-extract-force-btn" title="清空已提取数据并从头开始">重新提取</button>
+        </span>
+        {% endif %}
+      </summary>
+      <p class="ws-hint">分批从用户消息提取的局部功能点（数量较多）</p>
+      <div id="ws-extract-status" class="ws-report-status" style="display:none;"></div>
+      <div id="ws-block-timeline-wrap" class="ws-timeline-section" style="display:none;">
+        <h6 class="ws-timeline-heading">研发时间轴</h6>
+        <p class="ws-hint">基于细粒度 Blocks 按月份排列，圆点颜色对应类型</p>
+        <div id="ws-block-timeline" class="ws-block-timeline"></div>
+      </div>
+      <div id="ws-blocks-fine-wrap" class="ws-blocks-fine-wrap">
+        {% if workspace_report and workspace_report.blocks_fine %}
+        {% for block in workspace_report.blocks_fine %}
+        {% include "_block_card_fine.html" %}
+        {% endfor %}
+        {% else %}
+        <p class="ws-hint" id="ws-fine-empty">暂无细粒度 Blocks</p>
+        {% endif %}
+      </div>
+    </details>
+
+    <div class="ws-tier ws-tier-modules">
+      <div class="ws-tier-head-row">
+        <div class="ws-tier-head">
+          <h5>② 模块总览</h5>
+          <span class="ws-tier-count" id="ws-modules-count">{{ (workspace_report.blocks_modules|length) if workspace_report and workspace_report.blocks_modules else (workspace_report.blocks|length if workspace_report and workspace_report.blocks else 0) }}</span>
+        </div>
+        {% if ai_available %}
+        <div class="ws-report-actions">
+          <button type="button" class="secondary" id="ws-merge-btn">合并模块</button>
+          <button type="button" class="secondary" id="ws-merge-force-btn" title="忽略模块缓存重新合并">重新合并</button>
+        </div>
+        {% endif %}
+      </div>
+      <p class="ws-hint">合并后的 5～15 个研发模块，报告基于此层撰写</p>
+      <div id="ws-merge-status" class="ws-report-status" style="display:none;"></div>
+      <div id="ws-blocks-modules-wrap" class="ws-blocks-wrap">
+        {% set modules = workspace_report.blocks_modules if workspace_report and workspace_report.blocks_modules else (workspace_report.blocks if workspace_report else []) %}
+        {% if modules %}
+        {% for block in modules %}
+        {% include "_block_card.html" %}
+        {% endfor %}
+        {% else %}
+        <p class="ws-hint" id="ws-modules-empty">暂无模块总览，完成提取后点击「合并模块」。</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="ws-report-md-head">
+      <div>
+        <h4>③ 研发报告</h4>
+        <p class="ws-hint">基于模块总览与统计数据生成 Markdown</p>
+      </div>
+      {% if ai_available %}
+      <div class="ws-report-actions">
+        <button type="button" class="secondary" id="ws-report-md-btn">生成报告</button>
+        <button type="button" class="secondary" id="ws-report-md-force-btn" title="忽略缓存重新生成报告">刷新报告</button>
+      </div>
+      {% endif %}
+    </div>
+    {% if workspace_report and workspace_report.generated_at %}
+    <span class="ws-hint" id="ws-report-meta">生成于 {{ workspace_report.generated_at|fmt_time }} · {{ workspace_report.user_message_count }} 条用户消息</span>
+    {% else %}
+    <span class="ws-hint" id="ws-report-meta"></span>
+    {% endif %}
+    <div id="ws-report-status" class="ws-report-status" style="display:none;"></div>
+    <div id="ws-report-md" class="ws-report-md">
+      {% if workspace_report and workspace_report.report_md %}
+      <p class="ws-hint">加载报告中…</p>
+      {% else %}
+      <p class="ws-hint">完成 Blocks 后，点击「生成报告」撰写 Markdown。</p>
+      {% endif %}
+    </div>
+    {% if workspace_report and workspace_report.report_md %}
+    <script type="application/json" id="ws-report-md-initial">{{ workspace_report.report_md|tojson }}</script>
+    {% endif %}
+    {% if workspace_report and workspace_report.blocks_fine %}
+    <script type="application/json" id="ws-fine-blocks-initial">{{ workspace_report.blocks_fine|tojson }}</script>
+    {% endif %}
+    {% set modules_initial = workspace_report.blocks_modules if workspace_report and workspace_report.blocks_modules else (workspace_report.blocks if workspace_report else []) %}
+    {% if modules_initial %}
+    <script type="application/json" id="ws-modules-initial">{{ modules_initial|tojson }}</script>
+    {% endif %}
+  </section>
+
+  <div id="ws-block-drawer" class="ws-drawer" aria-hidden="true">
+    <div class="ws-drawer-backdrop" id="ws-drawer-backdrop"></div>
+    <aside class="ws-drawer-panel" role="dialog" aria-labelledby="ws-drawer-title">
+      <header class="ws-drawer-header">
+        <h4 id="ws-drawer-title">Block 详情</h4>
+        <button type="button" class="ws-drawer-close" id="ws-drawer-close" aria-label="关闭">×</button>
+      </header>
+      <div class="ws-drawer-body">
+        <section id="ws-drawer-block-info" class="ws-drawer-block-info"></section>
+        <section class="ws-drawer-messages-section">
+          <div class="ws-drawer-messages-head">
+            <h5>本批用户消息</h5>
+            <span class="ws-hint" id="ws-drawer-batch-meta"></span>
+          </div>
+          <div id="ws-drawer-messages" class="ws-drawer-messages">
+            <p class="ws-hint">加载中…</p>
+          </div>
+        </section>
+      </div>
+    </aside>
+  </div>
+</div>

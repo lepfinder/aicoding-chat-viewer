@@ -1,0 +1,1045 @@
+{% extends "base.html" %}
+{% block title %}AI 会话浏览{% endblock %}
+{% block body %}
+<div class="layout">
+  <!-- 左栏：工作目录 -->
+  <aside class="col sidebar" data-wq="{{ wq }}">
+    <div class="col-head">
+      <h2>工作目录</h2>
+      <form class="search-form" method="get" action="{{ url_for('index') }}">
+        {% if conversation_id %}
+        <input type="hidden" name="conversation" value="{{ conversation_id }}">
+        {% endif %}
+        <input type="text" name="wq" value="{{ wq }}" placeholder="搜索目录…">
+      </form>
+    </div>
+    <div class="col-body" id="workspace-list-body">
+      {% for ws in workspaces %}
+      <a class="nav-item {% if ws.workspace_path == workspace %}active{% endif %}"
+         href="{{ browse_url(ws.workspace_path, '', wq, '') }}">
+        <div class="nav-title">{{ ws.workspace_path|workspace_short }}</div>
+        <div class="nav-sub">{{ ws.workspace_path|workspace_label }}</div>
+        <div class="nav-meta">
+          {{ ws.cnt }} 会话
+          {% if ws.ag_cnt %}<span class="badge ag">AG {{ ws.ag_cnt }}</span>{% endif %}
+          {% if ws.cursor_cnt %}<span class="badge cursor">Cursor {{ ws.cursor_cnt }}</span>{% endif %}
+          · 用户 {{ ws.user_message_count or 0 }} · 全部 {{ ws.message_count or 0 }}
+        </div>
+      </a>
+      {% else %}
+      <div class="empty">暂无目录，请先同步</div>
+      {% endfor %}
+    </div>
+  </aside>
+
+  <!-- 中栏：会话列表 -->
+  <section class="col conversations" data-workspace="{{ workspace }}" data-cq="{{ cq }}">
+    <div class="col-head">
+      <h2>会话</h2>
+      <form class="search-form" method="get" action="{{ url_for('index') }}">
+        <input type="hidden" name="workspace" value="{{ workspace|urlencode_path }}">
+        <input type="text" name="cq" value="{{ cq }}" placeholder="搜索会话标题…">
+      </form>
+    </div>
+    <div class="col-body" id="conv-list-body">
+      {% for c in conversations %}
+      <a class="nav-item conv-item {% if c.id == conversation_id %}active{% endif %}"
+         href="{{ browse_url(workspace, c.id, wq, cq) }}">
+        <div class="nav-title">{{ c.title or c.id }}</div>
+        <div class="nav-meta">
+          <span class="badge {% if c.source_app == 'cursor' %}cursor{% else %}ag{% endif %}">{{ c.source_app|source_label }}</span>
+          {{ c.updated_at|fmt_time }}
+          · 用户 {{ c.user_message_count or 0 }} · 全部 {{ c.message_count or 0 }}
+          {% if c.source_app != 'cursor' and c.parse_status == 'ok' %}
+          <span class="badge ok">可读</span>
+          {% elif c.source_app != 'cursor' and c.parse_status == 'encrypted_only' %}
+          <span class="badge warn">仅pb</span>
+          {% endif %}
+        </div>
+      </a>
+      {% else %}
+      <div class="empty">该目录下暂无会话</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- 右栏：消息列表 -->
+  <main class="col messages-col">
+    <div id="messages-loading" class="messages-loading" aria-hidden="true">
+      <div class="loading-spinner" role="status" aria-label="加载中"></div>
+      <p>正在加载会话…</p>
+    </div>
+    {% if show_workspace_stats and workspace_stats %}
+    {% include "_workspace_stats.html" %}
+    {% elif conv %}
+    <div class="conv-header">
+      <h3>{{ conv.title }}</h3>
+      <div class="meta">
+        <span class="badge {% if conv.source_app == 'cursor' %}cursor{% else %}ag{% endif %}">{{ conv.source_app|source_label }}</span>
+        {{ workspace|workspace_label }} · {{ conv.created_at|fmt_time }} → {{ conv.updated_at|fmt_time }}
+        · 用户 {{ conv.user_message_count or 0 }} · 全部 {{ messages|length }}
+      </div>
+      {% if conv.source_app != 'cursor' %}
+      <form action="{{ url_for('sync') }}" method="post" style="margin-top:0.5rem;">
+        <input type="hidden" name="conversation_id" value="{{ conv.id }}">
+        <input type="hidden" name="workspace" value="{{ workspace }}">
+        <input type="hidden" name="force" value="1">
+        <button type="submit" class="secondary">重新同步此会话</button>
+      </form>
+      {% else %}
+      <div class="meta" style="margin-top:0.35rem;">Cursor 会话为只读直查，不写入本地库</div>
+      {% endif %}
+    </div>
+    <div class="messages-pane">
+      {% if conv.parse_status == 'encrypted_only' %}
+      <div class="flash warn" style="position:static;margin-bottom:0.75rem;">
+        仅有加密 .pb，无法解析消息内容
+      </div>
+      {% endif %}
+      {% for turn in message_turns %}
+      {% if turn.user %}
+      <details class="user-turn role-user">
+        <summary>
+          <div class="user-turn-summary-head">
+            {% include "_collapse_icon.html" %}
+            <strong>用户</strong>
+            <span>step {{ turn.user.step_index }}</span>
+            <span class="msg-time">{{ turn.user.created_at|fmt_msg_time }}</span>
+            {% if turn.user.is_truncated %}<span class="badge warn">截断</span>{% endif %}
+            {% if turn.replies %}
+            <span class="reply-count">{{ turn.replies|length }} 条回复</span>
+            {% endif %}
+          </div>
+          {% if turn.user.content %}<pre>{{ turn.user.content }}</pre>{% endif %}
+          {% if turn.user.images %}
+          {% with images=turn.user.images %}
+          {% include "_message_images.html" %}
+          {% endwith %}
+          {% endif %}
+        </summary>
+        {% if turn.replies %}
+        <div class="turn-replies">
+          {% for m in turn.replies %}
+          {% include "_message_reply.html" %}
+          {% endfor %}
+        </div>
+        {% endif %}
+      </details>
+      {% else %}
+      <div class="orphan-turn">
+        {% for m in turn.replies %}
+        {% include "_message_reply.html" %}
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="empty">此会话暂无消息</div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty" style="margin-top:4rem;">← 选择工作目录查看统计，或选择会话查看消息</div>
+    {% endif %}
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+(function () {
+  const overlay = document.getElementById("messages-loading");
+  const sidebar = document.querySelector(".sidebar");
+  const workspaceList = document.getElementById("workspace-list-body");
+  const convSection = document.querySelector(".conversations");
+  const convList = document.getElementById("conv-list-body");
+
+  function workspaceScrollKey() {
+    if (!sidebar) return "workspaceListScroll";
+    const wq = sidebar.dataset.wq || "";
+    return "workspaceListScroll:" + wq;
+  }
+
+  function saveWorkspaceScroll() {
+    if (!workspaceList) return;
+    sessionStorage.setItem(workspaceScrollKey(), String(workspaceList.scrollTop));
+  }
+
+  function restoreWorkspaceScroll() {
+    if (!workspaceList) return;
+    const saved = sessionStorage.getItem(workspaceScrollKey());
+    if (saved !== null && saved !== "") {
+      workspaceList.scrollTop = Number(saved) || 0;
+      return;
+    }
+    const active = workspaceList.querySelector(".nav-item.active");
+    if (active) {
+      active.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  if (workspaceList) {
+    restoreWorkspaceScroll();
+    workspaceList.addEventListener("scroll", saveWorkspaceScroll, { passive: true });
+  }
+
+  function convScrollKey() {
+    if (!convSection) return "convListScroll";
+    const ws = convSection.dataset.workspace || "";
+    const cq = convSection.dataset.cq || "";
+    return "convListScroll:" + ws + ":" + cq;
+  }
+
+  function saveConvScroll() {
+    if (!convList) return;
+    sessionStorage.setItem(convScrollKey(), String(convList.scrollTop));
+  }
+
+  function restoreConvScroll() {
+    if (!convList) return;
+    const saved = sessionStorage.getItem(convScrollKey());
+    if (saved !== null && saved !== "") {
+      convList.scrollTop = Number(saved) || 0;
+      return;
+    }
+    const active = convList.querySelector(".conv-item.active");
+    if (active) {
+      active.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  if (convList) {
+    restoreConvScroll();
+    convList.addEventListener("scroll", saveConvScroll, { passive: true });
+  }
+
+  function showLoading(link) {
+    if (!overlay) return;
+    overlay.classList.add("is-active");
+    overlay.setAttribute("aria-hidden", "false");
+    if (link) link.classList.add("is-loading");
+  }
+
+  document.querySelectorAll(".conv-item").forEach(function (link) {
+    link.addEventListener("click", function () {
+      if (link.classList.contains("active")) return;
+      saveConvScroll();
+      showLoading(link);
+    });
+  });
+
+  document.querySelectorAll(".sidebar .nav-item").forEach(function (link) {
+    link.addEventListener("click", function () {
+      if (link.classList.contains("active")) return;
+      saveWorkspaceScroll();
+      showLoading(null);
+    });
+  });
+
+  const extractBtn = document.getElementById("ws-extract-btn");
+  const extractForceBtn = document.getElementById("ws-extract-force-btn");
+  const mergeBtn = document.getElementById("ws-merge-btn");
+  const mergeForceBtn = document.getElementById("ws-merge-force-btn");
+  const extractStatus = document.getElementById("ws-extract-status");
+  const mergeStatus = document.getElementById("ws-merge-status");
+  const reportMdBtn = document.getElementById("ws-report-md-btn");
+  const reportMdForceBtn = document.getElementById("ws-report-md-force-btn");
+  const reportStatus = document.getElementById("ws-report-status");
+  const blocksFineWrap = document.getElementById("ws-blocks-fine-wrap");
+  const blocksModulesWrap = document.getElementById("ws-blocks-modules-wrap");
+  const timelineWrap = document.getElementById("ws-block-timeline-wrap");
+  const timelineEl = document.getElementById("ws-block-timeline");
+  const fineCountEl = document.getElementById("ws-fine-count");
+  const modulesCountEl = document.getElementById("ws-modules-count");
+  const fineTier = document.getElementById("ws-fine-tier");
+  const reportMd = document.getElementById("ws-report-md");
+  const reportMeta = document.getElementById("ws-report-meta");
+  const wsPath = {{ workspace|tojson }};
+  let activeEventSource = null;
+  let analysisPollTimer = null;
+  let analysisWatching = false;
+  const fineBlocksMap = {};
+  const blockDrawer = document.getElementById("ws-block-drawer");
+  const drawerBackdrop = document.getElementById("ws-drawer-backdrop");
+  const drawerCloseBtn = document.getElementById("ws-drawer-close");
+  const drawerBlockInfo = document.getElementById("ws-drawer-block-info");
+  const drawerBatchMeta = document.getElementById("ws-drawer-batch-meta");
+  const drawerMessages = document.getElementById("ws-drawer-messages");
+  const drawerTitle = document.getElementById("ws-drawer-title");
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function typeLabel(t) {
+    return { module: "模块", feature: "功能", phase: "阶段" }[t] || t || "模块";
+  }
+
+  function statusLabel(s) {
+    return { completed: "已完成", ongoing: "进行中", paused: "暂停", unknown: "未知" }[s] || s || "未知";
+  }
+
+  function blockAnchorMonth(block) {
+    const raw = block.start_date || block.end_date;
+    if (!raw || String(raw).length < 7) return null;
+    return String(raw).slice(0, 7);
+  }
+
+  function blockSortDate(block) {
+    return block.start_date || block.end_date || "";
+  }
+
+  function buildTimelineRows(blocks) {
+    const byMonth = {};
+    const undated = [];
+    (blocks || []).forEach(function (block) {
+      const month = blockAnchorMonth(block);
+      if (!month) {
+        undated.push(block);
+        return;
+      }
+      if (!byMonth[month]) byMonth[month] = [];
+      byMonth[month].push(block);
+    });
+    const rows = Object.keys(byMonth).sort().map(function (month) {
+      return {
+        month: month,
+        items: byMonth[month].sort(function (a, b) {
+          return blockSortDate(a).localeCompare(blockSortDate(b));
+        }),
+      };
+    });
+    if (undated.length) {
+      rows.push({
+        month: null,
+        items: undated,
+      });
+    }
+    return rows;
+  }
+
+  function renderTimelineItem(block) {
+    const status = block.status || "unknown";
+    const type = block.type || "module";
+    return (
+      '<div class="ws-timeline-item block-type-' + escapeHtml(type) + " status-" + escapeHtml(status) + '" ' +
+      'title="' + escapeHtml(block.summary || "") + '">' +
+      '<span class="ws-timeline-dot"></span>' +
+      '<span class="ws-timeline-name">' + escapeHtml(block.title || "未命名") + "</span>" +
+      "</div>"
+    );
+  }
+
+  function renderBlockTimeline(blocks) {
+    if (!timelineEl) return;
+    const rows = buildTimelineRows(blocks || []);
+    if (!rows.length) {
+      timelineEl.innerHTML = "";
+      if (timelineWrap) timelineWrap.style.display = "none";
+      return;
+    }
+    if (timelineWrap) timelineWrap.style.display = "block";
+    timelineEl.innerHTML = rows.map(function (row) {
+      const monthLabel = row.month
+        ? escapeHtml(row.month)
+        : '<span class="ws-timeline-undated">未标注</span>';
+      return (
+        '<div class="ws-timeline-row">' +
+        '<div class="ws-timeline-month">' + monthLabel + "</div>" +
+        '<div class="ws-timeline-track">' +
+        '<div class="ws-timeline-rail"></div>' +
+        '<div class="ws-timeline-items">' +
+        row.items.map(renderTimelineItem).join("") +
+        "</div></div></div>"
+      );
+    }).join("");
+  }
+
+  function renderFineBlockCard(block) {
+    const batch = block.batch_index != null
+      ? '<span class="ws-fine-batch">批' + (Number(block.batch_index) + 1) + "</span>"
+      : "";
+    const kws = (block.keywords || []).slice(0, 3).map(function (kw) {
+      return '<span class="ws-kw">' + escapeHtml(kw) + "</span>";
+    }).join("");
+    const dates = (block.start_date || block.end_date)
+      ? '<p class="ws-block-dates">' + escapeHtml(block.start_date || "—") + " ~ " + escapeHtml(block.end_date || "—") + "</p>"
+      : "";
+    return (
+      '<article class="ws-block-card ws-block-card-fine ws-block-card-clickable fine-type-' + escapeHtml(block.type || "feature") + '" ' +
+      'data-block-id="' + escapeHtml(block.id || "") + '" ' +
+      'data-batch-index="' + (block.batch_index != null ? String(block.batch_index) : "") + '" ' +
+      'title="点击查看详情与本批消息" tabindex="0" role="button">' +
+      '<div class="ws-fine-card-top">' + batch +
+      '<span class="ws-badge type-' + escapeHtml(block.type) + '">' + typeLabel(block.type) + "</span>" +
+      "</div>" +
+      '<h5 class="ws-block-title">' + escapeHtml(block.title) + "</h5>" +
+      '<p class="ws-block-summary">' + escapeHtml(block.summary || "") + "</p>" +
+      (kws ? '<div class="ws-block-keywords">' + kws + "</div>" : "") +
+      dates +
+      "</article>"
+    );
+  }
+
+  function renderBlockCard(block, compact) {
+    if (compact) return renderFineBlockCard(block);
+    const kws = (block.keywords || []).map(function (kw) {
+      return '<span class="ws-kw">' + escapeHtml(kw) + "</span>";
+    }).join("");
+    const dates = (block.start_date || block.end_date)
+      ? '<p class="ws-block-dates">' + escapeHtml(block.start_date || "—") + " ~ " + escapeHtml(block.end_date || "—") + "</p>"
+      : "";
+    const children = (block.child_fine_ids && block.child_fine_ids.length)
+      ? '<p class="ws-block-children">包含细粒度：' + escapeHtml(block.child_fine_ids.join("、")) + "</p>"
+      : "";
+    const evidence = (block.evidence || []).map(function (ev) {
+      const date = ev.date ? '<span class="ws-ev-date">' + escapeHtml(ev.date) + "</span> " : "";
+      const title = ev.conversation_title ? "<strong>" + escapeHtml(ev.conversation_title) + "</strong> " : "";
+      return "<li>" + date + title + "<span>" + escapeHtml(ev.snippet || "") + "</span></li>";
+    }).join("");
+    const evBlock = evidence
+      ? '<details class="ws-block-evidence"><summary>依据（' + (block.evidence || []).length + '）</summary><ul>' + evidence + "</ul></details>"
+      : "";
+    const cardClass = compact ? "ws-block-card ws-block-compact" : "ws-block-card";
+    return (
+      '<article class="' + cardClass + '">' +
+      '<div class="ws-block-head"><h5 class="ws-block-title">' + escapeHtml(block.title) + "</h5>" +
+      '<div class="ws-block-badges">' +
+      '<span class="ws-badge type-' + escapeHtml(block.type) + '">' + typeLabel(block.type) + "</span>" +
+      "</div></div>" +
+      '<p class="ws-block-summary">' + escapeHtml(block.summary || "") + "</p>" +
+      (kws ? '<div class="ws-block-keywords">' + kws + "</div>" : "") +
+      dates + children + evBlock +
+      "</article>"
+    );
+  }
+
+  function indexFineBlocks(blocks) {
+    (blocks || []).forEach(function (block) {
+      if (block && block.id) fineBlocksMap[block.id] = block;
+    });
+  }
+
+  function renderBlocksFine(blocks) {
+    indexFineBlocks(blocks);
+    if (!blocksFineWrap) return;
+    if (!blocks || !blocks.length) {
+      blocksFineWrap.innerHTML = '<p class="ws-hint">暂无细粒度 Blocks</p>';
+      renderBlockTimeline([]);
+    } else {
+      blocksFineWrap.innerHTML = blocks.map(function (b) { return renderBlockCard(b, true); }).join("");
+    }
+    if (fineCountEl) fineCountEl.textContent = String((blocks || []).length);
+    if (fineTier && blocks && blocks.length) fineTier.open = true;
+    bindFineBlockCards();
+    renderBlockTimeline(blocks || []);
+  }
+
+  function conversationUrl(conversationId) {
+    if (!conversationId) return "#";
+    return "/?workspace=" + encodeURIComponent(wsPath || "") + "&conversation=" + encodeURIComponent(conversationId);
+  }
+
+  function renderDrawerBlockInfo(block) {
+    if (!drawerBlockInfo || !block) return;
+    const batch = block.batch_index != null
+      ? '<span class="ws-fine-batch">批' + (Number(block.batch_index) + 1) + "</span>"
+      : "";
+    const kws = (block.keywords || []).map(function (kw) {
+      return '<span class="ws-kw">' + escapeHtml(kw) + "</span>";
+    }).join("");
+    const dates = (block.start_date || block.end_date)
+      ? '<p class="ws-block-dates">' + escapeHtml(block.start_date || "—") + " ~ " + escapeHtml(block.end_date || "—") + "</p>"
+      : "";
+    drawerBlockInfo.innerHTML =
+      '<div class="ws-fine-card-top">' + batch +
+      '<span class="ws-badge type-' + escapeHtml(block.type || "feature") + '">' + typeLabel(block.type) + "</span></div>" +
+      '<h5 class="ws-block-title">' + escapeHtml(block.title || "") + "</h5>" +
+      '<p class="ws-block-summary">' + escapeHtml(block.summary || "") + "</p>" +
+      (kws ? '<div class="ws-block-keywords">' + kws + "</div>" : "") +
+      dates;
+    if (drawerTitle) drawerTitle.textContent = block.title || "Block 详情";
+  }
+
+  function renderDrawerMessages(data) {
+    if (!drawerMessages || !data) return;
+    const msgs = data.messages || [];
+    if (!msgs.length) {
+      drawerMessages.innerHTML = '<p class="ws-hint">本批没有消息</p>';
+      return;
+    }
+    drawerMessages.innerHTML = msgs.map(function (msg, idx) {
+      const title = msg.conversation_title || msg.conversation_id || "未命名会话";
+      const cid = msg.conversation_id || "";
+      const src = msg.source === "cursor" ? "Cursor" : "AG";
+      return (
+        '<article class="ws-drawer-msg">' +
+        '<div class="ws-drawer-msg-head">' +
+        '<a class="ws-drawer-msg-title" href="' + escapeHtml(conversationUrl(cid)) + '">' + escapeHtml(title) + "</a>" +
+        '<span>' + escapeHtml(fmtTime(msg.created_at, true)) + '</span>' +
+        "</div>" +
+        '<div class="ws-drawer-msg-head"><span class="ws-drawer-msg-source">' + escapeHtml(src) + "</span><span>#"+ (idx + 1) + "</span></div>" +
+        '<p class="ws-drawer-msg-body">' + escapeHtml(msg.content || "") + "</p>" +
+        "</article>"
+      );
+    }).join("");
+  }
+
+  function openBlockDrawer(card) {
+    if (!blockDrawer || !card) return;
+    const blockId = card.getAttribute("data-block-id");
+    const batchIndexRaw = card.getAttribute("data-batch-index");
+    const block = fineBlocksMap[blockId];
+    if (!block || batchIndexRaw === "" || batchIndexRaw == null) return;
+
+    renderDrawerBlockInfo(block);
+    if (drawerBatchMeta) drawerBatchMeta.textContent = "加载中…";
+    if (drawerMessages) drawerMessages.innerHTML = '<p class="ws-hint">加载中…</p>';
+    blockDrawer.classList.add("open");
+    blockDrawer.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+
+    fetch(
+      "/api/workspace/batch-messages?workspace=" + encodeURIComponent(wsPath || "") +
+      "&batch_index=" + encodeURIComponent(batchIndexRaw)
+    )
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.ok) {
+          if (drawerMessages) drawerMessages.innerHTML = '<p class="ws-error">' + escapeHtml(data.error || "加载失败") + "</p>";
+          return;
+        }
+        if (drawerBatchMeta) {
+          const dr = data.date_range || [];
+          drawerBatchMeta.textContent =
+            "第 " + data.batch_no + "/" + data.batch_total + " 批 · " +
+            data.message_count + " 条 · " +
+            (dr[0] || "—") + " ~ " + (dr[1] || "—");
+        }
+        renderDrawerMessages(data);
+      })
+      .catch(function (err) {
+        if (drawerMessages) drawerMessages.innerHTML = '<p class="ws-error">' + escapeHtml(String(err)) + "</p>";
+      });
+  }
+
+  function closeBlockDrawer() {
+    if (!blockDrawer) return;
+    blockDrawer.classList.remove("open");
+    blockDrawer.setAttribute("aria-hidden", "true");
+    document.body.style.overflow = "";
+  }
+
+  function bindFineBlockCards() {
+    if (!blocksFineWrap) return;
+    blocksFineWrap.querySelectorAll(".ws-block-card-fine").forEach(function (card) {
+      if (card.dataset.drawerBound === "1") return;
+      card.dataset.drawerBound = "1";
+      card.addEventListener("click", function () { openBlockDrawer(card); });
+      card.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openBlockDrawer(card);
+        }
+      });
+    });
+  }
+
+  if (drawerBackdrop) drawerBackdrop.addEventListener("click", closeBlockDrawer);
+  if (drawerCloseBtn) drawerCloseBtn.addEventListener("click", closeBlockDrawer);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeBlockDrawer();
+  });
+
+  function renderBlocksModules(blocks) {
+    if (!blocksModulesWrap) return;
+    if (!blocks || !blocks.length) {
+      blocksModulesWrap.innerHTML = '<p class="ws-hint">暂无模块总览</p>';
+    } else {
+      blocksModulesWrap.innerHTML = blocks.map(function (b) { return renderBlockCard(b, false); }).join("");
+    }
+    if (modulesCountEl) modulesCountEl.textContent = String((blocks || []).length);
+  }
+
+  function renderBlocks(report) {
+    renderBlocksFine(report.blocks_fine || []);
+    renderBlocksModules(report.blocks_modules || report.blocks || []);
+  }
+
+  function renderReportMd(md) {
+    if (!reportMd) return;
+    if (!md) {
+      reportMd.innerHTML = '<p class="ws-hint">报告为空。</p>';
+      return;
+    }
+    if (window.marked) {
+      reportMd.innerHTML = '<div class="ws-report-md-body">' + marked.parse(md) + "</div>";
+    } else {
+      reportMd.innerHTML = '<div class="ws-report-md-body"><pre class="ws-md-fallback">' + escapeHtml(md) + "</pre></div>";
+    }
+  }
+
+  function fmtTime(iso, withSeconds) {
+    if (!iso) return "—";
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso.slice(0, withSeconds ? 19 : 16);
+      const parts = new Intl.DateTimeFormat("zh-CN", {
+        timeZone: "Asia/Shanghai",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: withSeconds ? "2-digit" : undefined,
+        hour12: false,
+      }).formatToParts(d);
+      const get = function (type) {
+        const item = parts.find(function (p) { return p.type === type; });
+        return item ? item.value : "";
+      };
+      const base = get("year") + "-" + get("month") + "-" + get("day") + " " + get("hour") + ":" + get("minute");
+      return withSeconds ? base + ":" + get("second") : base;
+    } catch (e) {
+      return iso.slice(0, withSeconds ? 19 : 16);
+    }
+  }
+
+  function confirmForceAction(message) {
+    return window.confirm(message);
+  }
+
+  function bindTierActionButtons() {
+    document.querySelectorAll(".ws-tier-actions button, .ws-tier-head-row .ws-report-actions button").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+      });
+    });
+  }
+  bindTierActionButtons();
+
+  function setAnalysisBusy(busy) {
+    const btns = [extractBtn, extractForceBtn, mergeBtn, mergeForceBtn, reportMdBtn, reportMdForceBtn];
+    btns.forEach(function (btn) {
+      if (btn) btn.disabled = !!busy;
+    });
+  }
+
+  function clearTierStatus(el) {
+    if (!el) return;
+    el.style.display = "none";
+    el.innerHTML = "";
+  }
+
+  function statusElForStage(stage, status) {
+    const s = stage || status || "";
+    if (s === "merge") return mergeStatus;
+    if (s === "report") return reportStatus;
+    return extractStatus;
+  }
+
+  function renderInlineProgress(container, detail, percent, indeterminate) {
+    if (!container) return;
+    container.style.display = "block";
+    const pct = percent != null ? Math.min(100, Math.max(0, percent)) : 15;
+    const fillClass = indeterminate ? "ws-progress-fill indeterminate" : "ws-progress-fill";
+    const widthAttr = indeterminate ? "" : ' style="width:' + pct + '%"';
+    container.innerHTML =
+      '<div class="ws-progress-label">' + escapeHtml(detail || "处理中…") + "</div>" +
+      '<div class="ws-progress-bar"><div class="' + fillClass + '"' + widthAttr + "></div></div>";
+  }
+
+  function inlineProgressFromEvent(container, data) {
+    if (!container || !data) return;
+    const detail = data.detail || data.stage_detail || "处理中…";
+    if (detail.indexOf("命中") >= 0) {
+      renderInlineProgress(container, detail, 100, false);
+      return;
+    }
+    const total = Number(data.total) || 0;
+    const current = Number(data.current) || 0;
+    if (total > 0) {
+      const pct = current > 0
+        ? Math.min(95, Math.round((current / total) * 100))
+        : 5;
+      renderInlineProgress(container, detail, pct, false);
+      return;
+    }
+    if (data.stage === "merge" || data.stage === "report") {
+      renderInlineProgress(container, detail, null, true);
+      return;
+    }
+    renderInlineProgress(container, detail, 15, false);
+  }
+
+  function stopAnalysisPolling() {
+    if (analysisPollTimer) {
+      clearInterval(analysisPollTimer);
+      analysisPollTimer = null;
+    }
+  }
+
+  function startAnalysisPolling() {
+    if (analysisPollTimer) return;
+    analysisPollTimer = setInterval(fetchAnalysisStatus, 3000);
+  }
+
+  function applyAnalysisFromServer(a) {
+    if (!a) return;
+    const hasBlocks = Boolean(
+      (a.blocks_fine && a.blocks_fine.length) ||
+      (a.blocks_modules && a.blocks_modules.length)
+    );
+    const staleExtractError = a.error_message && !a.locked && (
+      a.extract_complete || (hasBlocks && (a.extract_completed_batches || 0) > 0)
+    );
+    if (a.error_message && !a.locked && !staleExtractError) {
+      analysisWatching = false;
+      stopAnalysisPolling();
+      setAnalysisBusy(false);
+      const errEl = statusElForStage(a.stage, a.status);
+      if (errEl) {
+        errEl.style.display = "block";
+        errEl.innerHTML = '<p class="ws-error">' + escapeHtml(a.error_message) + "</p>";
+      }
+      return;
+    }
+    if (staleExtractError) {
+      clearTierStatus(extractStatus);
+    }
+    if (a.locked) {
+      analysisWatching = true;
+      const status = a.status || "";
+      const label = a.stage_detail
+        || (status === "merge" || a.stage === "merge" ? "模块合并中…" : "Blocks 提取中…");
+      setAnalysisBusy(true);
+      const activeStatus = statusElForStage(a.stage, status);
+      if (activeStatus) {
+        activeStatus.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        inlineProgressFromEvent(activeStatus, {
+          stage: a.stage || status,
+          detail: a.stage_detail || label,
+          current: a.progress_current,
+          total: a.progress_total,
+        });
+      }
+      if (a.stage === "extract" || status === "extract" || (!a.stage && status !== "merge" && status !== "report")) {
+        if (fineTier) fineTier.open = true;
+      }
+      if (a.blocks_fine && a.blocks_fine.length) {
+        renderBlocksFine(a.blocks_fine);
+      }
+      startAnalysisPolling();
+      return;
+    }
+    updateExtractButtonLabel(a);
+    if (!analysisWatching) return;
+    analysisWatching = false;
+    stopAnalysisPolling();
+    setAnalysisBusy(false);
+    clearTierStatus(extractStatus);
+    clearTierStatus(mergeStatus);
+    clearTierStatus(reportStatus);
+    if ((a.blocks_fine && a.blocks_fine.length) || (a.blocks_modules && a.blocks_modules.length)) {
+      renderBlocks({
+        blocks_fine: a.blocks_fine || [],
+        blocks_modules: a.blocks_modules || [],
+        blocks: a.blocks_modules || [],
+      });
+    }
+    if (a.report_md) {
+      renderReportMd(a.report_md);
+    }
+    if (a.generated_at || a.user_message_count) {
+      updateReportMeta({
+        generated_at: a.generated_at,
+        user_message_count: a.user_message_count,
+        llm_called: true,
+      });
+    }
+  }
+
+  function fetchAnalysisStatus() {
+    if (!wsPath) return Promise.resolve();
+    return fetch("/api/workspace/analysis?workspace=" + encodeURIComponent(wsPath))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.ok && data.analysis) applyAnalysisFromServer(data.analysis);
+      })
+      .catch(function () { /* ignore */ });
+  }
+
+  function closeActiveStream() {
+    if (activeEventSource) {
+      activeEventSource.close();
+      activeEventSource = null;
+    }
+  }
+
+  function updateExtractButtonLabel(a) {
+    if (!extractBtn || !a) return;
+    const pending = Math.max(
+      0,
+      Number(a.pending_new_messages != null
+        ? a.pending_new_messages
+        : (a.user_message_count || 0) - (a.last_extracted_message_count || 0))
+    );
+    const done = a.extract_complete;
+    const started = ((a.last_extracted_message_count || 0) > 0
+      || (a.extract_completed_batches || 0) > 0) && !done;
+    if (pending > 0 && (started || (a.last_extracted_message_count || 0) > 0)) {
+      extractBtn.textContent = "继续提取 (+" + pending + ")";
+    } else if (started) {
+      extractBtn.textContent = "继续提取";
+    } else {
+      extractBtn.textContent = "提取 Blocks";
+    }
+  }
+
+  function streamStage(path, force, statusEl, onDone, busyLabel, opts) {
+    opts = opts || {};
+    const progressHook = opts.progressHook || function (data) {
+      inlineProgressFromEvent(statusEl, data);
+    };
+    closeActiveStream();
+    if (statusEl && !opts.skipStatusClear) {
+      clearTierStatus(statusEl);
+    }
+    setAnalysisBusy(true);
+    analysisWatching = true;
+    startAnalysisPolling();
+    const url = path + "?workspace=" + encodeURIComponent(wsPath || "") + (force ? "&force=1" : "");
+    let streamDone = false;
+    const es = new EventSource(url);
+    activeEventSource = es;
+
+    es.addEventListener("cached", function (ev) {
+      try {
+        const data = JSON.parse(ev.data);
+        progressHook({
+          detail: data.detail || "命中缓存",
+          current: 1,
+          total: 1,
+          stage: opts.stage || "",
+        });
+      } catch (e) { /* ignore */ }
+    });
+
+    es.addEventListener("progress", function (ev) {
+      try {
+        progressHook(JSON.parse(ev.data));
+      } catch (e) { /* ignore */ }
+    });
+
+    es.addEventListener("batch_saved", function (ev) {
+      try {
+        const data = JSON.parse(ev.data);
+        progressHook(data);
+        fetchAnalysisStatus();
+      } catch (e) { /* ignore */ }
+    });
+
+    es.addEventListener("done", function (ev) {
+      streamDone = true;
+      analysisWatching = false;
+      stopAnalysisPolling();
+      closeActiveStream();
+      setAnalysisBusy(false);
+      if (opts.onComplete) opts.onComplete();
+      try {
+        const payload = JSON.parse(ev.data);
+        if (payload.ok && payload.report) onDone(payload.report);
+      } catch (e) {
+        if (statusEl) {
+          statusEl.style.display = "block";
+          statusEl.innerHTML = '<p class="ws-error">响应解析失败</p>';
+        }
+      }
+    });
+
+    es.addEventListener("failed", function (ev) {
+      let message = "生成失败";
+      if (ev.data) {
+        try {
+          const parsed = JSON.parse(ev.data);
+          message = parsed.error || parsed.message || message;
+        } catch (e) { /* ignore */ }
+      }
+      streamDone = true;
+      analysisWatching = false;
+      stopAnalysisPolling();
+      closeActiveStream();
+      setAnalysisBusy(false);
+      if (opts.onComplete) opts.onComplete();
+      if (statusEl) {
+        statusEl.style.display = "block";
+        statusEl.innerHTML = '<p class="ws-error">' + escapeHtml(message) + "</p>";
+      }
+    });
+
+    es.onerror = function () {
+      if (streamDone || !activeEventSource) return;
+      closeActiveStream();
+      fetchAnalysisStatus();
+      startAnalysisPolling();
+      if (statusEl) {
+        statusEl.style.display = "block";
+        statusEl.innerHTML = '<p class="ws-hint">连接中断，正在同步后台进度…</p>';
+      }
+    };
+  }
+
+  function updateReportMeta(report) {
+    if (!reportMeta || !report) return;
+    const parts = [];
+    if (report.generated_at) {
+      parts.push("更新于 " + fmtTime(report.generated_at));
+    }
+    if (report.user_message_count) {
+      parts.push(report.user_message_count + " 条用户消息");
+    }
+    if (report.from_cache) {
+      parts.push("缓存");
+    } else if (report.llm_called) {
+      parts.push("LLM 新生成");
+    }
+    reportMeta.textContent = parts.join(" · ");
+  }
+
+  function runExtract(force) {
+    if (fineTier) fineTier.open = true;
+    if (extractStatus) {
+      extractStatus.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      renderInlineProgress(
+        extractStatus,
+        force ? "正在重新提取 Blocks…" : "正在准备提取 Blocks…",
+        10,
+        false
+      );
+    }
+    streamStage(
+      "/api/workspace/extract-stream",
+      force,
+      extractStatus,
+      function (report) {
+        clearTierStatus(extractStatus);
+        renderBlocksFine(report.blocks_fine || []);
+        updateReportMeta(report);
+        fetchAnalysisStatus();
+      },
+      force ? "正在重新提取 Blocks" : "正在提取细粒度 Blocks",
+      { skipStatusClear: true, stage: "extract" }
+    );
+  }
+
+  function runMerge(force) {
+    const modulesTier = document.querySelector(".ws-tier-modules");
+    if (modulesTier) {
+      modulesTier.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    if (mergeStatus) {
+      renderInlineProgress(mergeStatus, "正在准备合并模块…", 10, false);
+    }
+    streamStage(
+      "/api/workspace/merge-stream",
+      force,
+      mergeStatus,
+      function (report) {
+        clearTierStatus(mergeStatus);
+        renderBlocks(report);
+        updateReportMeta(report);
+        if (force && reportMd) {
+          reportMd.innerHTML = '<p class="ws-hint">模块已更新，请重新生成报告。</p>';
+        }
+      },
+      "正在合并模块总览",
+      { skipStatusClear: true, stage: "merge" }
+    );
+  }
+
+  function runReportMd(force) {
+    const reportHead = document.querySelector(".ws-report-md-head");
+    if (reportHead) {
+      reportHead.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    renderInlineProgress(reportStatus, "正在准备生成报告…", 10, false);
+    if (reportMd) {
+      reportMd.innerHTML = '<p class="ws-hint">报告生成中，请稍候…</p>';
+    }
+    streamStage(
+      "/api/workspace/report-stream",
+      force,
+      reportStatus,
+      function (report) {
+        clearTierStatus(reportStatus);
+        renderReportMd(report.report_md);
+        updateReportMeta(report);
+      },
+      "正在撰写 Markdown 报告",
+      { skipStatusClear: true, stage: "report" }
+    );
+  }
+
+  function refreshAnalysisStatus() {
+    fetchAnalysisStatus();
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") {
+      fetchAnalysisStatus();
+    }
+  });
+
+  const initialFineEl = document.getElementById("ws-fine-blocks-initial");
+  if (initialFineEl) {
+    try {
+      const fineBlocks = JSON.parse(initialFineEl.textContent);
+      indexFineBlocks(fineBlocks);
+      bindFineBlockCards();
+      renderBlockTimeline(fineBlocks);
+    } catch (e) { /* ignore */ }
+  }
+
+  const initialMdEl = document.getElementById("ws-report-md-initial");
+  if (initialMdEl && reportMd) {
+    try {
+      renderReportMd(JSON.parse(initialMdEl.textContent));
+    } catch (e) {
+      reportMd.innerHTML = '<p class="ws-error">报告加载失败</p>';
+    }
+  }
+
+  if (extractBtn) {
+    extractBtn.addEventListener("click", function () { runExtract(false); });
+  }
+  if (extractForceBtn) {
+    extractForceBtn.addEventListener("click", function () {
+      if (!confirmForceAction("将清空已提取的细粒度 Blocks 并从头重新提取，是否继续？")) return;
+      runExtract(true);
+    });
+  }
+  if (mergeBtn) {
+    mergeBtn.addEventListener("click", function () { runMerge(false); });
+  }
+  if (mergeForceBtn) {
+    mergeForceBtn.addEventListener("click", function () {
+      if (!confirmForceAction("将忽略模块缓存并重新合并，是否继续？")) return;
+      runMerge(true);
+    });
+  }
+  if (reportMdBtn) {
+    reportMdBtn.addEventListener("click", function () { runReportMd(false); });
+  }
+  if (reportMdForceBtn) {
+    reportMdForceBtn.addEventListener("click", function () {
+      if (!confirmForceAction("将忽略报告缓存并重新生成 Markdown，是否继续？")) return;
+      runReportMd(true);
+    });
+  }
+  refreshAnalysisStatus();
+})();
+</script>
+{% endblock %}
