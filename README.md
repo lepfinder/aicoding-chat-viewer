@@ -70,6 +70,8 @@ python app.py --full-sync --sync-on-start  # 全量同步后启动
 
 复制 `.env.example` 为 `.env`：
 
+### LLM（研发分析可选）
+
 | 变量 | 说明 |
 |------|------|
 | `OPENAI_API_KEY` | OpenAI 兼容 API Key（Blocks / 报告功能必填） |
@@ -79,12 +81,23 @@ python app.py --full-sync --sync-on-start  # 全量同步后启动
 
 未配置 API Key 时仍可浏览会话与统计，无法使用研发分析管线。
 
-服务监听地址可通过环境变量覆盖（见 `bin/lib.sh`）：
+### 路径与服务（均有默认值，可不配置）
 
-- `CHAT_VIEWER_HOST`（默认 `127.0.0.1`）
-- `CHAT_VIEWER_PORT`（默认 `8788`）
+| 变量 | 默认值 |
+|------|--------|
+| `ANTIGRAVITY_DATA_DIR` | `~/.gemini/antigravity-ide` |
+| `ANTIGRAVITY_LEGACY_DATA_DIR` | `~/.gemini/antigravity` |
+| `CHAT_VIEWER_DB_PATH` | `data/antigravity_chats.db`（相对项目根） |
+| `CURSOR_USER_DIR` | `~/Library/Application Support/Cursor/User` |
+| `CURSOR_DB_PATH` | `{CURSOR_USER_DIR}/globalStorage/state.vscdb` |
+| `CURSOR_WS_STORAGE_DIR` | `{CURSOR_USER_DIR}/workspaceStorage` |
+| `CURSOR_PROJECTS_DIR` | `~/.cursor/projects` |
+| `CHAT_VIEWER_HOST` | `127.0.0.1` |
+| `CHAT_VIEWER_PORT` | `8788` |
 
-本地索引库默认位于 `data/antigravity_chats.db`（已在 `.gitignore` 中排除）。
+路径支持 `~` 展开；相对路径相对于项目根目录解析。Linux / Windows 用户可通过 `CURSOR_USER_DIR` 等覆盖 Cursor 路径（例如 Linux 常为 `~/.config/Cursor/User`）。
+
+本地索引库位于 `data/`（已在 `.gitignore` 中排除）。
 
 ## 项目结构
 
@@ -107,7 +120,6 @@ python app.py --full-sync --sync-on-start  # 全量同步后启动
 ## 已知限制
 
 - 数据格式绑定 Antigravity 本地目录结构与 Cursor `state.vscdb` schema
-- Cursor 路径目前写死为 macOS 目录，Linux / Windows 需自行改 `config.py` 或后续通过环境变量支持
 - 加密会话（仅存在 `.pb` 而无可读日志）会标记为 `encrypted_only`
 
 ## License
